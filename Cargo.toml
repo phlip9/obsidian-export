@@ -32,8 +32,10 @@ lazy_static = "1.4.0"
 matter = "0.1.0-alpha4"
 pathdiff = "0.2.1"
 percent-encoding = "2.1.0"
-pulldown-cmark = "0.9.0"
-pulldown-cmark-to-cmark = "9.0.0"
+# pulldown-cmark = "0.9.0"
+# pulldown-cmark-to-cmark = "9.0.0"
+pulldown-cmark = { git = "https://github.com/phlip9/pulldown-cmark.git", branch = "mathjax" }
+pulldown-cmark-to-cmark = { git = "https://github.com/phlip9/pulldown-cmark-to-cmark.git", branch = "mathjax" }
 rayon = "1.5.1"
 regex = "1.5.4"
 serde_yaml = "0.8.23"
