@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use eyre::{eyre, Result};
 use gumdrop::Options;
-use obsidian_export::postprocessors::{filter_by_tags, softbreaks_to_hardbreaks};
+use obsidian_export::postprocessors::{filter_by_tags, only_published_filter, softbreaks_to_hardbreaks};
 use obsidian_export::{ExportError, Exporter, FrontmatterStrategy, WalkOptions};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -34,6 +34,13 @@ struct Opts {
         default = "auto"
     )]
     frontmatter_strategy: FrontmatterStrategy,
+
+    #[options(
+        help = "Only export markdown files marked `publish: true` in the frontmatter",
+        no_short,
+        default = "false"
+    )]
+    only_published: bool,
 
     #[options(
         no_short,
@@ -113,6 +120,10 @@ fn main() {
 
     let tags_postprocessor = filter_by_tags(args.skip_tags, args.only_tags);
     exporter.add_postprocessor(&tags_postprocessor);
+
+    if args.only_published {
+        exporter.add_postprocessor(&only_published_filter);
+    }
 
     if let Some(path) = args.start_at {
         exporter.start_at(path);

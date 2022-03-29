@@ -3,7 +3,9 @@ use std::fs::{read_to_string, remove_file};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use obsidian_export::postprocessors::{filter_by_tags, softbreaks_to_hardbreaks};
+use obsidian_export::postprocessors::{
+    filter_by_tags, only_published_filter, softbreaks_to_hardbreaks,
+};
 use obsidian_export::{Context, Exporter, MarkdownEvents, PostprocessorResult};
 use pretty_assertions::assert_eq;
 use pulldown_cmark::{CowStr, Event};
@@ -294,4 +296,40 @@ fn test_filter_by_tags() {
             filename
         );
     }
+}
+
+#[test]
+#[allow(clippy::shadow_unrelated)]
+fn test_only_published_filter() {
+    let tmp_dir = TempDir::new().expect("failed to make tempdir");
+    let mut exporter = Exporter::new(
+        PathBuf::from("tests/testdata/input/postprocessors"),
+        tmp_dir.path().to_path_buf(),
+    );
+    exporter.add_postprocessor(&only_published_filter);
+    exporter.run().unwrap();
+
+    // export notes with an explicit `publish: true`
+    let expected = read_to_string("tests/testdata/expected/postprocessors/publish.md").unwrap();
+    let actual = read_to_string(tmp_dir.path().join("publish.md")).unwrap();
+    assert_eq!(expected, actual);
+
+    // export images if they are referenced by published notes
+    let expected =
+        read_to_string("tests/testdata/expected/postprocessors/publish_with_image.md").unwrap();
+    let actual = read_to_string(tmp_dir.path().join("publish_with_image.md")).unwrap();
+    assert_eq!(expected, actual);
+    let expected = read_to_string("tests/testdata/expected/postprocessors/foo.svg").unwrap();
+    let actual = read_to_string(tmp_dir.path().join("foo.svg")).unwrap();
+    assert_eq!(expected, actual);
+
+    // don't export notes with explicit `publish: false`
+    assert!(!tmp_dir.path().join("no_publish.md").exists());
+
+    // don't export notes without a `publish` entry at all
+    assert!(!tmp_dir.path().join("hard_linebreaks.md").exists());
+
+    // TODO: should not publish the image either if the note was not published
+    assert!(!tmp_dir.path().join("no_publish_with_image.md").exists());
+    // assert!(!tmp_dir.path().join("secret.svg").exists());
 }

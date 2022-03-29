@@ -19,6 +19,20 @@ pub fn softbreaks_to_hardbreaks(
     PostprocessorResult::Continue
 }
 
+/// A postprocessor which rejects any notes without `publish: true` in their
+/// frontmatter.
+#[allow(clippy::needless_pass_by_ref_mut)] // ignore unnecessary mut in &mut Context
+pub fn only_published_filter(
+    context: &mut Context,
+    _events: &mut MarkdownEvents<'_>,
+) -> PostprocessorResult {
+    let publish_key = Value::String("publish".to_owned());
+    match context.frontmatter.get(&publish_key) {
+        Some(Value::Bool(true)) => PostprocessorResult::Continue,
+        _ => PostprocessorResult::StopAndSkipNote,
+    }
+}
+
 pub fn filter_by_tags(
     skip_tags: Vec<String>,
     only_tags: Vec<String>,
