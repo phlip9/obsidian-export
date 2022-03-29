@@ -449,6 +449,7 @@ impl<'a> Exporter<'a> {
         parser_options.insert(Options::ENABLE_FOOTNOTES);
         parser_options.insert(Options::ENABLE_STRIKETHROUGH);
         parser_options.insert(Options::ENABLE_TASKLISTS);
+        parser_options.insert(Options::ENABLE_MATH);
 
         let mut ref_parser = RefParser::new();
         let mut events = vec![];
@@ -730,7 +731,6 @@ fn render_mdevents_to_mdtext(markdown: MarkdownEvents) -> String {
     cmark_with_options(
         markdown.iter(),
         &mut buffer,
-        None,
         pulldown_cmark_to_cmark::Options::default(),
     )
     .expect("formatting to string not expected to fail");
@@ -830,6 +830,9 @@ fn event_to_owned<'a>(event: Event) -> Event<'a> {
         Event::End(tag) => Event::End(tag_to_owned(tag)),
         Event::Text(cowstr) => Event::Text(CowStr::from(cowstr.into_string())),
         Event::Code(cowstr) => Event::Code(CowStr::from(cowstr.into_string())),
+        Event::MathText(cowstr, is_inline) => {
+            Event::MathText(CowStr::from(cowstr.into_string()), is_inline)
+        }
         Event::Html(cowstr) => Event::Html(CowStr::from(cowstr.into_string())),
         Event::FootnoteReference(cowstr) => {
             Event::FootnoteReference(CowStr::from(cowstr.into_string()))
@@ -849,6 +852,7 @@ fn tag_to_owned<'a>(tag: Tag) -> Tag<'a> {
             Tag::Heading(level, None, Vec::new())
         }
         Tag::BlockQuote => Tag::BlockQuote,
+        Tag::MathBlock => Tag::MathBlock,
         Tag::CodeBlock(codeblock_kind) => Tag::CodeBlock(codeblock_kind_to_owned(codeblock_kind)),
         Tag::List(optional) => Tag::List(optional),
         Tag::Item => Tag::Item,
