@@ -1,6 +1,6 @@
 use eyre::{eyre, Result};
 use gumdrop::Options;
-use obsidian_export::postprocessors::softbreaks_to_hardbreaks;
+use obsidian_export::postprocessors::{only_published_filter, softbreaks_to_hardbreaks};
 use obsidian_export::{ExportError, Exporter, FrontmatterStrategy, WalkOptions};
 use std::{env, path::PathBuf};
 
@@ -31,6 +31,13 @@ struct Opts {
         default = "auto"
     )]
     frontmatter_strategy: FrontmatterStrategy,
+
+    #[options(
+        help = "Only export markdown files marked `publish: true` in the frontmatter",
+        no_short,
+        default = "false"
+    )]
+    only_published: bool,
 
     #[options(
         no_short,
@@ -92,6 +99,10 @@ fn main() {
 
     if args.hard_linebreaks {
         exporter.add_postprocessor(&softbreaks_to_hardbreaks);
+    }
+
+    if args.only_published {
+        exporter.add_postprocessor(&only_published_filter);
     }
 
     if let Some(path) = args.start_at {

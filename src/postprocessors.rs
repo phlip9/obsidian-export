@@ -16,3 +16,16 @@ pub fn softbreaks_to_hardbreaks(
     }
     PostprocessorResult::Continue
 }
+
+/// A postprocessor which rejects any notes without `publish: true` in their
+/// frontmatter.
+pub fn only_published_filter(
+    context: &mut Context,
+    _events: &mut MarkdownEvents,
+) -> PostprocessorResult {
+    let publish_key = serde_yaml::Value::String("publish".to_owned());
+    match context.frontmatter.get(&publish_key) {
+        Some(serde_yaml::Value::Bool(true)) => PostprocessorResult::Continue,
+        _ => PostprocessorResult::StopAndSkipNote,
+    }
+}
