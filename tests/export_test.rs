@@ -459,3 +459,37 @@ fn test_same_filename_different_directories() {
     let actual = read_to_string(tmp_dir.path().join(PathBuf::from("Note.md"))).unwrap();
     assert_eq!(expected, actual);
 }
+
+#[test]
+#[ignore = "temporarily failing unit test"]
+fn test_internal_links() {
+    let tmp_dir = TempDir::new().unwrap();
+    Exporter::new(
+        PathBuf::from("tests/testdata/input/main-samples"),
+        tmp_dir.path().to_path_buf(),
+    )
+    .run()
+    .unwrap();
+
+    let expected_1 =
+        read_to_string("tests/testdata/expected/main-samples/big money/big problems.md").unwrap();
+    let expected_2 = read_to_string("tests/testdata/expected/main-samples/foobar/baz.md").unwrap();
+
+    let actual_1 = read_to_string(
+        tmp_dir
+            .path()
+            .to_path_buf()
+            .join(PathBuf::from("big money/big problems.md")),
+    )
+    .unwrap();
+    let actual_2 = read_to_string(
+        tmp_dir
+            .path()
+            .to_path_buf()
+            .join(PathBuf::from("foobar/baz.md")),
+    )
+    .unwrap();
+
+    assert_eq!(expected_1, actual_1);
+    assert_eq!(expected_2, actual_2);
+}
