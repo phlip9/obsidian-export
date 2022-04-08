@@ -215,6 +215,28 @@ pub enum PostprocessorResult {
     StopAndSkipNote,
 }
 
+#[derive(Debug, Clone, Copy)]
+/// The formatting rule for internal links.
+pub enum InternalLinkFormat {
+    /// The default formatting rule.
+    ///
+    /// 1. Internal references are relative paths.
+    /// 2. Note paths include the `.md` suffix.
+    /// 3. Paths are percent-encoded.
+    /// 4. Anchor links are sluggified.
+    /// 5. References may include an optional label, like `[[Foo|Label]]`.
+    Normal,
+
+    /// An internal link format targetting [Zola](https://www.getzola.org).
+    ///
+    /// 1. Internal references are absolute paths (relative to the vault base directory).
+    /// 2. Note paths include a `@/` prefix and include the `.md` suffix.
+    /// 3. Paths are percent-encoded.
+    /// 4. Anchor links are sluggified.
+    /// 5. Reference labels will be ignored.
+    Zola,
+}
+
 #[derive(Clone)]
 /// Exporter provides the main interface to this library.
 ///
@@ -227,6 +249,7 @@ pub struct Exporter<'a> {
     destination: PathBuf,
     start_at: PathBuf,
     frontmatter_strategy: FrontmatterStrategy,
+    internal_link_format: InternalLinkFormat,
     vault_contents: Option<Vec<PathBuf>>,
     walk_options: WalkOptions<'a>,
     process_embeds_recursively: bool,
@@ -240,6 +263,7 @@ impl<'a> fmt::Debug for Exporter<'a> {
             .field("root", &self.root)
             .field("destination", &self.destination)
             .field("frontmatter_strategy", &self.frontmatter_strategy)
+            .field("internal_link_format", &self.internal_link_format)
             .field("vault_contents", &self.vault_contents)
             .field("walk_options", &self.walk_options)
             .field(
@@ -270,6 +294,7 @@ impl<'a> Exporter<'a> {
             root,
             destination,
             frontmatter_strategy: FrontmatterStrategy::Auto,
+            internal_link_format: InternalLinkFormat::Normal,
             walk_options: WalkOptions::default(),
             process_embeds_recursively: true,
             vault_contents: None,
@@ -296,6 +321,12 @@ impl<'a> Exporter<'a> {
     /// Set the [`FrontmatterStrategy`] to be used for this exporter.
     pub fn frontmatter_strategy(&mut self, strategy: FrontmatterStrategy) -> &mut Exporter<'a> {
         self.frontmatter_strategy = strategy;
+        self
+    }
+
+    /// Set the [`InternalLinkFormat`] to be used for this exporter.
+    pub fn internal_link_format(&mut self, format: InternalLinkFormat) -> &mut Exporter<'a> {
+        self.internal_link_format = format;
         self
     }
 

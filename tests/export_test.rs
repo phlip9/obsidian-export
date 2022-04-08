@@ -1,4 +1,4 @@
-use obsidian_export::{ExportError, Exporter, FrontmatterStrategy};
+use obsidian_export::{ExportError, Exporter, FrontmatterStrategy, InternalLinkFormat};
 use pretty_assertions::assert_eq;
 use std::fs::{create_dir, read_to_string, set_permissions, File, Permissions};
 use std::io::prelude::*;
@@ -426,12 +426,13 @@ fn test_same_filename_different_directories() {
 
 #[test]
 #[ignore = "temporarily failing unit test"]
-fn test_internal_links() {
+fn test_zola_internal_links() {
     let tmp_dir = TempDir::new().unwrap();
     Exporter::new(
         PathBuf::from("tests/testdata/input/main-samples"),
         tmp_dir.path().to_path_buf(),
     )
+    .internal_link_format(InternalLinkFormat::Zola)
     .run()
     .unwrap();
 

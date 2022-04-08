@@ -1,7 +1,9 @@
 use eyre::{eyre, Result};
 use gumdrop::Options;
 use obsidian_export::postprocessors::{only_published_filter, softbreaks_to_hardbreaks};
-use obsidian_export::{ExportError, Exporter, FrontmatterStrategy, WalkOptions};
+use obsidian_export::{
+    ExportError, Exporter, FrontmatterStrategy, InternalLinkFormat, WalkOptions,
+};
 use std::{env, path::PathBuf};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -61,6 +63,13 @@ struct Opts {
         default = "false"
     )]
     hard_linebreaks: bool,
+
+    #[options(
+        no_short,
+        help = "Convert internal references to Zola's internal link format",
+        default = "false"
+    )]
+    zola_links: bool,
 }
 
 fn frontmatter_strategy_from_str(input: &str) -> Result<FrontmatterStrategy> {
@@ -96,6 +105,10 @@ fn main() {
     exporter.frontmatter_strategy(args.frontmatter_strategy);
     exporter.process_embeds_recursively(!args.no_recursive_embeds);
     exporter.walk_options(walk_options);
+
+    if args.zola_links {
+        exporter.internal_link_format(InternalLinkFormat::Zola);
+    }
 
     if args.hard_linebreaks {
         exporter.add_postprocessor(&softbreaks_to_hardbreaks);
