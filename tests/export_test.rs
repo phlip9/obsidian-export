@@ -461,7 +461,6 @@ fn test_same_filename_different_directories() {
 }
 
 #[test]
-#[ignore = "temporarily failing unit test"]
 fn test_zola_internal_links() {
     let tmp_dir = TempDir::new().unwrap();
     Exporter::new(
