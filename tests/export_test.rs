@@ -6,7 +6,7 @@ use std::io::prelude::*;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
-use obsidian_export::{ExportError, Exporter, FrontmatterStrategy};
+use obsidian_export::{ExportError, Exporter, FrontmatterStrategy, InternalLinkFormat};
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 use walkdir::WalkDir;
@@ -462,12 +462,13 @@ fn test_same_filename_different_directories() {
 
 #[test]
 #[ignore = "temporarily failing unit test"]
-fn test_internal_links() {
+fn test_zola_internal_links() {
     let tmp_dir = TempDir::new().unwrap();
     Exporter::new(
         PathBuf::from("tests/testdata/input/main-samples"),
         tmp_dir.path().to_path_buf(),
     )
+    .internal_link_format(InternalLinkFormat::Zola)
     .run()
     .unwrap();
 
