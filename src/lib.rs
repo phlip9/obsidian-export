@@ -23,7 +23,7 @@ use rayon::prelude::*;
 use references::*;
 use slug::slugify;
 use snafu::{ResultExt, Snafu};
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::fs::{self, File};
 use std::io::prelude::*;
@@ -220,20 +220,23 @@ pub enum PostprocessorResult {
 pub enum InternalLinkFormat {
     /// The default formatting rule.
     ///
-    /// 1. Internal references are relative paths.
+    /// 1. Internal references are all relative paths.
     /// 2. Note paths include the `.md` suffix.
     /// 3. Paths are percent-encoded.
-    /// 4. Anchor links are sluggified.
-    /// 5. References may include an optional label, like `[[Foo|Label]]`.
+    /// 4. Self-references include the note filename.
+    /// 5. Anchor links are sluggified.
     Normal,
 
     /// An internal link format targetting [Zola](https://www.getzola.org).
     ///
-    /// 1. Internal references are absolute paths (relative to the vault base directory).
-    /// 2. Note paths include a `@/` prefix and include the `.md` suffix.
-    /// 3. Paths are percent-encoded.
-    /// 4. Anchor links are sluggified.
-    /// 5. Reference labels will be ignored.
+    /// 1. Internal references to notes are absolute paths, relative to the
+    ///    vault base directory.
+    /// 2. Internal references to embedded images are relative paths, but there
+    ///    is an extra `../` since notes each live in their own directories.
+    /// 3. Note paths include a `@/` prefix and include the `.md` suffix.
+    /// 4. Paths are percent-encoded.
+    /// 5. Self-references _do not_ include the note file name, only the anchor.
+    /// 6. Anchor links are sluggified.
     Zola,
 }
 
@@ -677,46 +680,69 @@ impl<'a> Exporter<'a> {
         Ok(events)
     }
 
+    fn format_file_link<'b>(&self, target_file: &PathBuf, context: &Context) -> String {
+        let link = match self.internal_link_format {
+            InternalLinkFormat::Normal => {
+                // We use root_file() rather than current_file() here to make sure links are always
+                // relative to the outer-most note, which is the note which this content is inserted into
+                // in case of embedded notes.
+                let rel_link = diff_paths(
+                    target_file,
+                    &context
+                        .root_file()
+                        .parent()
+                        .expect("obsidian content files should always have a parent"),
+                )
+                .expect("should be able to build relative path when target file is found in vault");
+
+                rel_link.to_string_lossy().to_string()
+            }
+            InternalLinkFormat::Zola => {
+                if is_markdown_file(&target_file) {
+                    if target_file == context.current_file() {
+                        // Case: the link is an internal link into the same document.
+                        //       Zola expects these not to contain any path at all.
+                        "".into()
+                    } else {
+                        // Case: the link is an internal link to another note in the
+                        //       same vault. Zola expects these to be links relative
+                        //       to the vault root directory, with an extra "@/"
+                        //       prefixed to mark them as internal links.
+                        let rel_link = target_file
+                            .strip_prefix(&self.start_at)
+                            .expect("notes should always be contained in the vault directory");
+                        format!("@/{}", rel_link.to_string_lossy()).into()
+                    }
+                } else {
+                    // Case: the link is an internal link to a image. Zola places
+                    //       pages into their own subdirectory and doesn't allow
+                    //       "@/" paths for images, so we need to use a relative
+                    //       path with an extra directory layer.
+                    let page_dir = context.root_file();
+                    let rel_link = diff_paths(target_file, &page_dir).expect(
+                        "should be able to build relative path when target file is found in vault",
+                    );
+
+                    rel_link.to_string_lossy().to_string()
+                }
+            }
+        };
+
+        utf8_percent_encode(&link, PERCENTENCODE_CHARS).to_string()
+    }
+
     fn make_link_to_file<'b, 'c>(
         &self,
         reference: ObsidianNoteReference<'b>,
         context: &Context,
     ) -> MarkdownEvents<'c> {
+        // resolve the link target note file path
         let target_file = reference
             .file
-            .map(|file| lookup_filename_in_vault(file, self.vault_contents.as_ref().unwrap()))
-            .unwrap_or_else(|| Some(context.current_file()));
+            .and_then(|file| lookup_filename_in_vault(file, self.vault_contents.as_ref().unwrap()))
+            .unwrap_or_else(|| context.current_file());
 
-        if target_file.is_none() {
-            // TODO: Extract into configurable function.
-            eprintln!(
-                "Warning: Unable to find referenced note\n\tReference: '{}'\n\tSource: '{}'\n",
-                reference
-                    .file
-                    .unwrap_or_else(|| context.current_file().to_str().unwrap()),
-                context.current_file().display(),
-            );
-            return vec![
-                Event::Start(Tag::Emphasis),
-                Event::Text(CowStr::from(reference.display())),
-                Event::End(Tag::Emphasis),
-            ];
-        }
-        let target_file = target_file.unwrap();
-        // We use root_file() rather than current_file() here to make sure links are always
-        // relative to the outer-most note, which is the note which this content is inserted into
-        // in case of embedded notes.
-        let rel_link = diff_paths(
-            target_file,
-            &context
-                .root_file()
-                .parent()
-                .expect("obsidian content files should always have a parent"),
-        )
-        .expect("should be able to build relative path when target file is found in vault");
-
-        let rel_link = rel_link.to_string_lossy();
-        let mut link = utf8_percent_encode(&rel_link, PERCENTENCODE_CHARS).to_string();
+        let mut link = self.format_file_link(target_file, context);
 
         if let Some(section) = reference.section {
             link.push('#');
@@ -800,9 +826,7 @@ fn copy_file(src: &Path, dest: &Path) -> Result<()> {
 }
 
 fn is_markdown_file(file: &Path) -> bool {
-    let no_ext = OsString::new();
-    let ext = file.extension().unwrap_or(&no_ext).to_string_lossy();
-    ext == "md"
+    file.extension() == Some(OsStr::new("md"))
 }
 
 /// Reduce a given `MarkdownEvents` to just those elements which are children of the given section
