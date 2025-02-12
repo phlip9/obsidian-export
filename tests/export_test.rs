@@ -1,53 +1,126 @@
 #![allow(clippy::shadow_unrelated)]
 
+use core::str;
+use std::collections::BTreeSet;
 use std::fs::{create_dir, read_to_string, set_permissions, File, Permissions};
 use std::io::prelude::*;
 #[cfg(not(target_os = "windows"))]
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use obsidian_export::{ExportError, Exporter, FrontmatterStrategy, InternalLinkFormat};
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
-use walkdir::WalkDir;
+use walkdir::{DirEntry, WalkDir};
+
+fn diff_export_dirs(expected_dir: &Path, actual_dir: &Path) {
+    // A type that wraps a path with its vault-relative path. It uses the
+    // relative path for comparisons.
+    struct FileEntry {
+        path: PathBuf,
+        rel_path: PathBuf,
+    }
+    impl Eq for FileEntry {}
+    impl PartialEq for FileEntry {
+        fn eq(&self, other: &Self) -> bool {
+            self.rel_path == other.rel_path
+        }
+    }
+    impl Ord for FileEntry {
+        fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+            self.rel_path.cmp(&other.rel_path)
+        }
+    }
+    impl PartialOrd for FileEntry {
+        fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    // Filter out directories and then compute the vault-relative path.
+    fn filter_entry(root_dir: &Path, entry: walkdir::Result<DirEntry>) -> Option<FileEntry> {
+        let entry = entry.unwrap();
+        if entry.metadata().unwrap().is_dir() {
+            return None;
+        }
+        let path = entry.into_path();
+        let rel_path = path.strip_prefix(root_dir).unwrap().to_path_buf();
+        Some(FileEntry { path, rel_path })
+    }
+
+    // Expected fileset
+    let expected_fileset = WalkDir::new(expected_dir)
+        .into_iter()
+        .filter_map(|entry| filter_entry(expected_dir, entry))
+        .collect::<BTreeSet<_>>();
+
+    // Actual generated fileset
+    let actual_fileset = WalkDir::new(actual_dir)
+        .into_iter()
+        .filter_map(|entry| filter_entry(actual_dir, entry))
+        .collect::<BTreeSet<_>>();
+
+    // Check for missing files or extra files in tmp_dir
+    let missing_fileset = expected_fileset
+        .difference(&actual_fileset)
+        .map(|entry| &entry.rel_path)
+        .collect::<Vec<_>>();
+    let extra_fileset = actual_fileset
+        .difference(&expected_fileset)
+        .map(|entry| &entry.rel_path)
+        .collect::<Vec<_>>();
+    assert!(
+        missing_fileset.is_empty() && extra_fileset.is_empty(),
+        "Missing files in temporary exportdir: {:?}\n\
+         Extra files in temporary exportdir: {:?}",
+        missing_fileset,
+        extra_fileset
+    );
+    assert_eq!(expected_fileset.len(), actual_fileset.len());
+
+    // Check contents of generated files match
+    for (expected_entry, actual_entry) in expected_fileset.into_iter().zip(actual_fileset) {
+        assert_eq!(&expected_entry.rel_path, &actual_entry.rel_path);
+        let expected = std::fs::read(&expected_entry.path).unwrap_or_else(|_| {
+            panic!(
+                "failed to read {} from testdata/expected/main-samples/",
+                expected_entry.rel_path.display()
+            )
+        });
+        let actual = std::fs::read(&actual_entry.path).unwrap_or_else(|_| {
+            panic!(
+                "failed to read {} from the temporary exportdir",
+                actual_entry.rel_path.display()
+            )
+        });
+        if let Ok(expected) = str::from_utf8(&expected) {
+            let actual = str::from_utf8(&actual).unwrap();
+            assert_eq!(
+                expected,
+                actual,
+                "'{}' does not have expected content",
+                expected_entry.rel_path.display()
+            );
+        } else {
+            assert_eq!(
+                expected,
+                actual,
+                "'{}' does not have expected content",
+                expected_entry.rel_path.display()
+            );
+        }
+    }
+}
 
 #[test]
 fn test_main_variants_with_default_options() {
     let tmp_dir = TempDir::new().expect("failed to make tempdir");
-
-    Exporter::new(
-        PathBuf::from("tests/testdata/input/main-samples/"),
-        tmp_dir.path().to_path_buf(),
-    )
-    .run()
-    .expect("exporter returned error");
-
-    let walker = WalkDir::new("tests/testdata/expected/main-samples/")
-        // Without sorting here, different test runs may trigger the first assertion failure in
-        // unpredictable order.
-        .sort_by(|a, b| a.file_name().cmp(b.file_name()))
-        .into_iter();
-    for entry in walker {
-        let entry = entry.unwrap();
-        if entry.metadata().unwrap().is_dir() {
-            continue;
-        };
-        let filename = entry.file_name().to_string_lossy().into_owned();
-        let expected = read_to_string(entry.path()).unwrap_or_else(|_| {
-            panic!(
-                "failed to read {} from testdata/expected/main-samples/",
-                entry.path().display()
-            )
-        });
-        let actual = read_to_string(tmp_dir.path().join(PathBuf::from(&filename)))
-            .unwrap_or_else(|_| panic!("failed to read {} from temporary exportdir", filename));
-
-        assert_eq!(
-            expected, actual,
-            "{} does not have expected content",
-            filename
-        );
-    }
+    let input_dir = Path::new("tests/testdata/input/main-samples/");
+    let expected_dir = Path::new("tests/testdata/expected/main-samples/");
+    Exporter::new(input_dir.to_owned(), tmp_dir.path().to_owned())
+        .run()
+        .expect("exporter returned error");
+    diff_export_dirs(expected_dir, tmp_dir.path());
 }
 
 #[test]
@@ -462,34 +535,12 @@ fn test_same_filename_different_directories() {
 
 #[test]
 fn test_zola_internal_links() {
-    let tmp_dir = TempDir::new().unwrap();
-    Exporter::new(
-        PathBuf::from("tests/testdata/input/main-samples"),
-        tmp_dir.path().to_path_buf(),
-    )
-    .internal_link_format(InternalLinkFormat::Zola)
-    .run()
-    .unwrap();
-
-    let expected_1 =
-        read_to_string("tests/testdata/expected/main-samples/big money/big problems.md").unwrap();
-    let expected_2 = read_to_string("tests/testdata/expected/main-samples/foobar/baz.md").unwrap();
-
-    let actual_1 = read_to_string(
-        tmp_dir
-            .path()
-            .to_path_buf()
-            .join(PathBuf::from("big money/big problems.md")),
-    )
-    .unwrap();
-    let actual_2 = read_to_string(
-        tmp_dir
-            .path()
-            .to_path_buf()
-            .join(PathBuf::from("foobar/baz.md")),
-    )
-    .unwrap();
-
-    assert_eq!(expected_1, actual_1);
-    assert_eq!(expected_2, actual_2);
+    let tmp_dir = TempDir::new().expect("failed to make tempdir");
+    let input_dir = Path::new("tests/testdata/input/zola-links");
+    let expected_dir = Path::new("tests/testdata/expected/zola-links");
+    Exporter::new(input_dir.to_owned(), tmp_dir.path().to_owned())
+        .internal_link_format(InternalLinkFormat::Zola)
+        .run()
+        .expect("exporter returned error");
+    diff_export_dirs(expected_dir, tmp_dir.path());
 }
